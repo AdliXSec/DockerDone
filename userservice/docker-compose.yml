@@ -1,7 +1,7 @@
 ##############################################
 # User Service (Python/Flask)
 # Command: docker compose up -d --build
-# Pastikan docker-compose.infra.yml sudah berjalan
+# Pastikan rabbitmq/docker-compose.yml sudah berjalan
 ##############################################
 
 services:
@@ -13,7 +13,7 @@ services:
       - "5001:5000"
     environment:
       - DATABASE_URL=mysql+pymysql://user:password@userservice-db/users_db
-      - JWT_SECRET_KEY=yoursecretkey
+      - JWT_SECRET_KEY=HTELXPM5abn2unNMin7J!7^*&rmEKDUL188gH8NDbeaLrvHk!$@*&
       - RABBITMQ_HOST=medtech-rabbitmq
     volumes:
       - .:/app
@@ -39,7 +39,7 @@ services:
     networks:
       - medtech-network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
       interval: 10s
       timeout: 5s
       retries: 5

@@ -1,47 +1,28 @@
 FROM php:8.2-fpm
 
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    git curl zip unzip libpng-dev libonig-dev libxml2-dev libzip-dev \
+    && docker-php-ext-install pdo pdo_mysql mbstring exif pcntl bcmath gd zip sockets \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install Composer
+COPY --from=composer:2.5 /usr/bin/composer /usr/bin/composer
+
 # Set working directory
 WORKDIR /var/www
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    git \
-    curl \
-    libpng-dev \
-    libonig-dev \
-    libxml2-dev \
-    zip \
-    unzip \
-    libzip-dev \
-    nginx
+# Copy app files
+COPY . .
 
-# Clear cache
-RUN apt-get clean && rm -rf /var/lib/apt/lists/*
+# Install Laravel dependencies (fallback, will be re-installed if volume overwrites)
+RUN composer install --prefer-dist --no-dev --optimize-autoloader --no-scripts --no-interaction || true
 
-# Install PHP extensions
-RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip sockets
+# Give proper permissions
+RUN chown -R www-data:www-data /var/www \
+    && chmod -R 775 /var/www/storage /var/www/bootstrap/cache || true
 
-# Get latest Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+# Expose port for PHP-FPM
+EXPOSE 9000
 
-# Copy existing application directory contents
-COPY . /var/www
-
-# Install dependencies
-RUN composer update --no-interaction --optimize-autoloader --no-dev
-
-# Copy nginx configuration
-COPY docker/nginx.conf /etc/nginx/sites-available/default
-RUN ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/default
-
-# Set permissions
-RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
-
-# Expose port 80
-EXPOSE 80
-
-# Create a start script
-RUN echo "#!/bin/sh\nif [ ! -d '/var/www/vendor' ]; then composer install; fi\nphp-fpm -D\nnginx -g 'daemon off;'" > /start.sh
-RUN chmod +x /start.sh
-
-CMD ["/start.sh"]
+CMD ["php-fpm"]

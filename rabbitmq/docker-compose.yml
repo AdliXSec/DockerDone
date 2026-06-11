@@ -27,7 +27,7 @@ services:
 
 networks:
   medtech-network:
-    driver: bridge
+    external: true
     name: medtech-network
 
 volumes:

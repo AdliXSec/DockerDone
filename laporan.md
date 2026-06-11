@@ -102,23 +102,28 @@ Saat ini, **belum ada implementasi GraphQL sama sekali** dalam project ini. Semu
 
 #### Status: ✅ SUDAH MEMENUHI (Setelah Pemisahan)
 
-Setelah pemisahan docker-compose yang telah dilakukan, sekarang setup sudah memenuhi kriteria **Memenuhi (100%)**:
+Setelah pemisahan docker-compose dan migrasi ke pola **3-container** (PHP-FPM + Nginx + Database), sekarang setup sudah memenuhi kriteria **Memenuhi (100%)**:
 
 #### Yang Sudah Terpenuhi:
-- ✅ Setiap service berjalan di **container terpisah** (`medtech-userservice`, `medtech-orderservice`, `medtech-productservice`, `medtech-uiservice`)
-- ✅ Setiap service memiliki **database MySQL terpisah** di container masing-masing (`medtech-userservice-db`, `medtech-orderservice-db`, `medtech-productservice-db`, `medtech-uiservice-db`)
+- ✅ Setiap service berjalan di **container terpisah** dengan pola 3-container (app + nginx + db)
+- ✅ Setiap service memiliki **database MySQL terpisah** di container masing-masing
 - ✅ **Shared network** (`medtech-network`) memungkinkan komunikasi antar service
-- ✅ Setup bisa dijalankan dengan perintah yang jelas dan terstruktur
-- ✅ **Healthcheck** diimplementasikan pada semua database container
+- ✅ Setup bisa dijalankan dengan perintah yang jelas dan terstruktur (script otomatis tersedia)
+- ✅ **Healthcheck** diimplementasikan pada semua database container dan RabbitMQ
 - ✅ **Volume** untuk persistensi data
+- ✅ **Nginx terpisah** sebagai web server per service (sesuai best-practice microservices)
+- ✅ **restart policy** `unless-stopped` pada semua container
 
 #### Cara Menjalankan:
 
 ```bash
-# Langkah 1: Jalankan infrastruktur bersama (RabbitMQ + Network)
-docker compose -f docker-compose.infra.yml up -d
+# Cara Cepat (Script Otomatis)
+./start-all.sh          # Linux/Mac
+.\start-all.ps1         # Windows
 
-# Langkah 2: Jalankan setiap service secara terpisah
+# Cara Manual
+docker network create medtech-network
+cd rabbitmq && docker compose up -d && cd ..
 cd userservice && docker compose up -d --build && cd ..
 cd orderservice && docker compose up -d --build && cd ..
 cd productservice && docker compose up -d --build && cd ..
@@ -129,36 +134,45 @@ cd uiservice && docker compose up -d --build && cd ..
 
 ```
 project-root/
-├── docker-compose.infra.yml        # Shared: RabbitMQ + Network
+├── rabbitmq/
+│   └── docker-compose.yml          # RabbitMQ + Network
 ├── userservice/
-│   ├── docker-compose.yml          # UserService + MySQL
+│   ├── docker-compose.yml          # Flask App + MySQL (2 container)
 │   └── Dockerfile
 ├── orderservice/
-│   ├── docker-compose.yml          # OrderService + MySQL
-│   └── Dockerfile
+│   ├── docker-compose.yml          # PHP-FPM + Nginx + MySQL (3 container)
+│   ├── Dockerfile
+│   └── nginx/default.conf
 ├── productservice/
-│   ├── docker-compose.yml          # ProductService + MySQL
-│   └── Dockerfile
-└── uiservice/
-    ├── docker-compose.yml          # UIService + MySQL
-    └── Dockerfile
+│   ├── docker-compose.yml          # PHP-FPM + Nginx + MySQL (3 container)
+│   ├── Dockerfile
+│   └── nginx/default.conf
+├── uiservice/
+│   ├── docker-compose.yml          # PHP-FPM + Nginx + MySQL (3 container)
+│   ├── Dockerfile
+│   └── nginx/default.conf
+├── start-all.sh / start-all.ps1    # Script startup otomatis
+└── stop-all.sh / stop-all.ps1      # Script shutdown otomatis
 ```
 
 #### Daftar Container yang Berjalan:
 
-| Container Name | Image | Port |
-|---------------|-------|------|
-| `medtech-rabbitmq` | rabbitmq:3-management | 5672, 15672 |
-| `medtech-userservice` | custom (Python Flask) | 5001 |
-| `medtech-userservice-db` | mysql:8.0 | 3307 |
-| `medtech-orderservice` | custom (PHP Laravel) | 8001 |
-| `medtech-orderservice-db` | mysql:8.0 | 3308 |
-| `medtech-productservice` | custom (PHP Laravel) | 8002 |
-| `medtech-productservice-db` | mysql:8.0 | 3309 |
-| `medtech-uiservice` | custom (PHP Laravel) | 8000 |
-| `medtech-uiservice-db` | mysql:8.0 | 3310 |
+| Container Name | Image | Port | Fungsi |
+|---------------|-------|------|--------|
+| `medtech-rabbitmq` | rabbitmq:3-management | 5672, 15672 | Message Broker |
+| `medtech-userservice` | custom (Python Flask) | 5001 | User Service App |
+| `medtech-userservice-db` | mysql:8.0 | 3307 | User Service Database |
+| `medtech-orderservice` | custom (PHP-FPM) | - | Order Service App |
+| `medtech-orderservice-nginx` | nginx:stable-alpine | 8001 | Order Service Web Server |
+| `medtech-orderservice-db` | mysql:8.0 | 3308 | Order Service Database |
+| `medtech-productservice` | custom (PHP-FPM) | - | Product Service App |
+| `medtech-productservice-nginx` | nginx:stable-alpine | 8002 | Product Service Web Server |
+| `medtech-productservice-db` | mysql:8.0 | 3309 | Product Service Database |
+| `medtech-uiservice` | custom (PHP-FPM) | - | UI Service App |
+| `medtech-uiservice-nginx` | nginx:stable-alpine | 8000 | UI Service Web Server |
+| `medtech-uiservice-db` | mysql:8.0 | 3310 | UI Service Database |
 
-**Total: 9 container terpisah** (4 service + 4 database + 1 message broker)
+**Total: 12 container terpisah** (4 app + 3 nginx + 4 database + 1 message broker)
 
 ---
 

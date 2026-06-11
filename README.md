@@ -4,13 +4,40 @@ Aplikasi ini adalah simulasi sistem manajemen pemesanan (e-commerce) kesehatan b
 
 ## 🏗 Arsitektur Sistem
 
-Sistem ini telah dimodifikasi menjadi arsitektur Microservice yang sepenuhnya terisolasi, di mana setiap service memiliki file `docker-compose.yml` dan databasenya sendiri.
+Sistem ini menggunakan arsitektur Microservice yang sepenuhnya terisolasi, di mana setiap service memiliki file `docker-compose.yml` dan databasenya sendiri. Setiap service Laravel menggunakan pola **3-container** (PHP-FPM + Nginx + Database) sesuai standar deployment microservices.
 
 1. **RabbitMQ (Shared Infra - Port 5672 & 15672):** Message Broker pusat untuk komunikasi asinkron antar service.
 2. **UI Service (Laravel - Port 8000):** Menangani antarmuka pengguna (Frontend).
 3. **Order Service (Laravel - Port 8001):** Mengelola transaksi pesanan.
 4. **Product Service (Laravel - Port 8002):** Mengelola katalog dan stok produk.
 5. **User Service (Python/Flask - Port 5001):** Mengelola autentikasi dan manajemen pengguna.
+
+### Struktur Docker Container
+
+```
+project-root/
+├── rabbitmq/
+│   └── docker-compose.yml          # RabbitMQ + Network creator
+├── userservice/
+│   ├── docker-compose.yml          # Flask App + MySQL (2 container)
+│   └── Dockerfile
+├── orderservice/
+│   ├── docker-compose.yml          # PHP-FPM + Nginx + MySQL (3 container)
+│   ├── Dockerfile
+│   └── nginx/default.conf
+├── productservice/
+│   ├── docker-compose.yml          # PHP-FPM + Nginx + MySQL (3 container)
+│   ├── Dockerfile
+│   └── nginx/default.conf
+├── uiservice/
+│   ├── docker-compose.yml          # PHP-FPM + Nginx + MySQL (3 container)
+│   ├── Dockerfile
+│   └── nginx/default.conf
+├── start-all.sh                    # Startup script (Linux/Mac)
+├── start-all.ps1                   # Startup script (Windows)
+├── stop-all.sh                     # Shutdown script (Linux/Mac)
+└── stop-all.ps1                    # Shutdown script (Windows)
+```
 
 ---
 
@@ -28,8 +55,8 @@ Pastikan Anda sudah menginstal:
 
 1. Clone repository ini:
    ```bash
-   git clone <link repo gua>
-   cd <nama repo gua>
+   git clone <link repo>
+   cd <nama repo>
    ```
 
 2. Siapkan file konfigurasi (`.env`) untuk masing-masing service. Salin file `.env.example` menjadi `.env` di setiap folder:
@@ -45,30 +72,44 @@ Pastikan Anda sudah menginstal:
 
 Karena sistem ini menganut arsitektur Microservice murni, Anda harus menjalankan container secara berurutan dimulai dari infrastruktur utamanya (RabbitMQ).
 
-Jalankan perintah ini satu per satu di terminal root project:
+**Cara Cepat (Script Otomatis):**
 
 ```bash
-# 1. Jalankan RabbitMQ & Network
+# Linux/Mac
+chmod +x start-all.sh
+./start-all.sh
+
+# Windows (PowerShell)
+.\start-all.ps1
+```
+
+**Cara Manual (Per-Service):**
+
+```bash
+# 1. Buat Network Docker
+docker network create medtech-network
+
+# 2. Jalankan RabbitMQ
 cd rabbitmq
 docker compose up -d
 cd ..
 
-# 2. Jalankan User Service (Python)
+# 3. Jalankan User Service (Python)
 cd userservice
 docker compose up -d --build
 cd ..
 
-# 3. Jalankan Order Service (Laravel)
+# 4. Jalankan Order Service (Laravel)
 cd orderservice
 docker compose up -d --build
 cd ..
 
-# 4. Jalankan Product Service (Laravel)
+# 5. Jalankan Product Service (Laravel)
 cd productservice
 docker compose up -d --build
 cd ..
 
-# 5. Jalankan UI Service (Laravel)
+# 6. Jalankan UI Service (Laravel)
 cd uiservice
 docker compose up -d --build
 cd ..
@@ -113,13 +154,11 @@ Buka terminal baru untuk masing-masing perintah di bawah ini dan biarkan berjala
 
 **Terminal 1: Menangkap Event User Baru (Order Service)**
 ```bash
-cd orderservice
 docker exec -it medtech-orderservice php artisan queue:work rabbitmq_users
 ```
 
 **Terminal 2: Menangkap Event Potong Stok Produk (Product Service)**
 ```bash
-cd productservice
 docker exec -it medtech-productservice php artisan queue:work rabbitmq --queue=product_stock_queue
 ```
 
@@ -135,9 +174,38 @@ Setelah semuanya berjalan, Anda bisa mengakses layanan melalui browser:
 - **User Service API:** [http://localhost:5001](http://localhost:5001)
 - **RabbitMQ Management (Monitor Antrean):** [http://localhost:15672](http://localhost:15672) (User: `guest` | Pass: `guest`)
 
+### Daftar Container yang Berjalan
+
+| Container Name | Image | Port | Fungsi |
+|---------------|-------|------|--------|
+| `medtech-rabbitmq` | rabbitmq:3-management | 5672, 15672 | Message Broker |
+| `medtech-userservice` | custom (Python Flask) | 5001 | User Service App |
+| `medtech-userservice-db` | mysql:8.0 | 3307 | User Service Database |
+| `medtech-orderservice` | custom (PHP-FPM) | - | Order Service App |
+| `medtech-orderservice-nginx` | nginx:stable-alpine | 8001 | Order Service Web Server |
+| `medtech-orderservice-db` | mysql:8.0 | 3308 | Order Service Database |
+| `medtech-productservice` | custom (PHP-FPM) | - | Product Service App |
+| `medtech-productservice-nginx` | nginx:stable-alpine | 8002 | Product Service Web Server |
+| `medtech-productservice-db` | mysql:8.0 | 3309 | Product Service Database |
+| `medtech-uiservice` | custom (PHP-FPM) | - | UI Service App |
+| `medtech-uiservice-nginx` | nginx:stable-alpine | 8000 | UI Service Web Server |
+| `medtech-uiservice-db` | mysql:8.0 | 3310 | UI Service Database |
+
+**Total: 12 container terpisah** (4 app + 3 nginx + 4 database + 1 message broker)
+
 ## 🛑 Cara Mematikan Aplikasi
 
-Untuk mematikan sistem, Anda harus melakukan _down_ di masing-masing direktori:
+**Cara Cepat (Script Otomatis):**
+
+```bash
+# Linux/Mac
+./stop-all.sh
+
+# Windows (PowerShell)
+.\stop-all.ps1
+```
+
+**Cara Manual:**
 
 ```bash
 cd uiservice && docker compose down && cd ..
