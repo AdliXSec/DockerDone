@@ -29,10 +29,6 @@ services:
       - PRODUCT_SERVICE_URL=http://medtech-productservice-nginx:80/api
     command: >
       sh -c "
-        if [ ! -f /var/www/vendor/autoload.php ]; then
-          echo '📦 Installing Composer dependencies...' &&
-          composer install --prefer-dist --optimize-autoloader --no-dev --no-interaction;
-        fi &&
         mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache &&
         chown -R www-data:www-data storage bootstrap/cache &&
         chmod -R 775 storage bootstrap/cache &&
