@@ -80,7 +80,7 @@ chmod +x start-all.sh
 ./start-all.sh
 
 # Windows (PowerShell)
-.\start-all.ps1
+powershell -ExecutionPolicy Bypass -File .\start-all.ps1
 ```
 
 **Cara Manual (Per-Service):**
