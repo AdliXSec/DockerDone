@@ -68,15 +68,22 @@ docker exec -it medtech-userservice python seed.py
 
 Write-Host ""
 Write-Host "🔧 Setting up UI Service (Laravel)..." -ForegroundColor Yellow
-docker exec -it medtech-uiservice sh -c "php artisan key:generate --force && php artisan optimize:clear && php artisan migrate --force"
+docker exec -it medtech-uiservice php artisan key:generate --force
+docker exec -it medtech-uiservice php artisan optimize:clear
+docker exec -it medtech-uiservice php artisan migrate --force
 
 Write-Host ""
 Write-Host "🔧 Setting up Order Service (Laravel)..." -ForegroundColor Yellow
-docker exec -it medtech-orderservice sh -c "php artisan key:generate --force && php artisan optimize:clear && php artisan migrate --force"
+docker exec -it medtech-orderservice php artisan key:generate --force
+docker exec -it medtech-orderservice php artisan optimize:clear
+docker exec -it medtech-orderservice php artisan migrate --force
 
 Write-Host ""
 Write-Host "🔧 Setting up Product Service (Laravel)..." -ForegroundColor Yellow
-docker exec -it medtech-productservice sh -c "php artisan key:generate --force && php artisan optimize:clear && php artisan migrate --force && php artisan db:seed --class=ObatSeeder --force"
+docker exec -it medtech-productservice php artisan key:generate --force
+docker exec -it medtech-productservice php artisan optimize:clear
+docker exec -it medtech-productservice php artisan migrate --force
+docker exec -it medtech-productservice php artisan db:seed --class=ObatSeeder --force
 
 Write-Host ""
 Write-Host "🚀 Starting Queue Workers in background..." -ForegroundColor Yellow
