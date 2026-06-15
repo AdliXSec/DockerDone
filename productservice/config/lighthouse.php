@@ -40,6 +40,9 @@ return [
 
             // Logs every incoming GraphQL query.
             // Nuwave\Lighthouse\Http\Middleware\LogGraphQLQueries::class,
+
+            // Verify login for all graphql requests
+            'verify.login',
         ],
 
         /*

@@ -83,85 +83,6 @@ chmod +x start-all.sh
 powershell -ExecutionPolicy Bypass -File .\start-all.ps1
 ```
 
-**Cara Manual (Per-Service):**
-
-```bash
-# 1. Buat Network Docker
-docker network create medtech-network
-
-# 2. Jalankan RabbitMQ
-cd rabbitmq
-docker compose up -d
-cd ..
-
-# 3. Jalankan User Service (Python)
-cd userservice
-docker compose up -d --build
-cd ..
-
-# 4. Jalankan Order Service (Laravel)
-cd orderservice
-docker compose up -d --build
-cd ..
-
-# 5. Jalankan Product Service (Laravel)
-cd productservice
-docker compose up -d --build
-cd ..
-
-# 6. Jalankan UI Service (Laravel)
-cd uiservice
-docker compose up -d --build
-cd ..
-```
-
-*(Catatan: Proses up pertama kali akan memakan waktu karena akan mem-build image lokal dan menginstall `vendor`/`dependencies` di dalam background).*
-
-### Langkah 3: Setup Database & Kunci Enkripsi
-
-Tunggu sekitar 1-2 menit setelah menjalankan perintah di atas agar container Laravel selesai menginstall Composer. Kemudian, jalankan perintah berikut untuk menginisialisasi database dan _Application Key_:
-
-**1. Setup Flask (User Service):**
-```bash
-docker exec -it medtech-userservice python init_db.py
-```
-
-**2. Setup Laravel Services:**
-```bash
-# Generate Key
-docker exec -it medtech-uiservice php artisan key:generate
-docker exec -it medtech-orderservice php artisan key:generate
-docker exec -it medtech-productservice php artisan key:generate
-
-# Bersihkan Config Cache agar Key yang baru dibuat bisa langsung terbaca
-docker exec -it medtech-uiservice php artisan config:clear
-docker exec -it medtech-orderservice php artisan config:clear
-docker exec -it medtech-productservice php artisan config:clear
-
-# Migrasi Database
-docker exec -it medtech-uiservice php artisan migrate --force
-docker exec -it medtech-orderservice php artisan migrate --force
-docker exec -it medtech-productservice php artisan migrate --force
-```
-
----
-
-## ⚙️ Menjalankan Sistem Asinkron (RabbitMQ Workers)
-
-Agar data antar-service tersinkronisasi (misal: pendaftaran user masuk ke sistem Order, atau stok obat berkurang otomatis saat terjadi checkout), Anda **WAJIB** menjalankan Worker RabbitMQ.
-
-Buka terminal baru untuk masing-masing perintah di bawah ini dan biarkan berjalan di _background_:
-
-**Terminal 1: Menangkap Event User Baru (Order Service)**
-```bash
-docker exec -it medtech-orderservice php artisan queue:work rabbitmq_users
-```
-
-**Terminal 2: Menangkap Event Potong Stok Produk (Product Service)**
-```bash
-docker exec -it medtech-productservice php artisan queue:work rabbitmq --queue=product_stock_queue
-```
-
 ---
 
 ## 🌐 Akses Aplikasi
@@ -202,7 +123,7 @@ Setelah semuanya berjalan, Anda bisa mengakses layanan melalui browser:
 ./stop-all.sh
 
 # Windows (PowerShell)
-.\stop-all.ps1
+powershell -ExecutionPolicy Bypass -File .\stop-all.ps1
 ```
 
 **Cara Manual:**
