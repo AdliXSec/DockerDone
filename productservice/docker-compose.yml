@@ -1,0 +1,96 @@
+services:
+  productservice-app:
+    build: .
+    container_name: productservice
+    volumes:
+      - .:/var/www
+    environment:
+      APP_ENV: local
+      APP_DEBUG: true
+      APP_URL: http://localhost:8002
+
+      TRUSTED_PROXIES: "*"
+
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres-service
+      DB_PORT: 5432
+      DB_DATABASE: products_db
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+
+      QUEUE_CONNECTION: rabbitmq
+      RABBITMQ_HOST: medtech-rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: guest
+      RABBITMQ_PASSWORD: guest
+      RABBITMQ_VHOST: /
+
+      USER_SERVICE_URL: http://medtech-userservice:5000
+
+    command: >
+      sh -c "
+      mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache &&
+      chown -R www-data:www-data storage bootstrap/cache &&
+      chmod -R 775 storage bootstrap/cache &&
+      touch storage/logs/laravel.log &&
+      chmod 664 storage/logs/laravel.log &&
+      chown www-data:www-data storage/logs/laravel.log &&
+      php-fpm
+      "
+
+    networks:
+      - medtech-network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15
+    container_name: postgres-service
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: products_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - medtech-network
+
+  hasura:
+    image: hasura/graphql-engine:latest
+    container_name: medtech-hasura
+    restart: always
+    depends_on:
+      - postgres
+    ports:
+      - "8080:8080"
+    environment:
+      HASURA_GRAPHQL_DATABASE_URL: postgres://postgres:postgres@postgres-service:5432/products_db
+      HASURA_GRAPHQL_ENABLE_CONSOLE: "true"
+      HASURA_GRAPHQL_DEV_MODE: "true"
+      HASURA_GRAPHQL_ADMIN_SECRET: admin123
+    networks:
+      - medtech-network
+
+  productservice-nginx:
+    image: nginx:stable-alpine
+    container_name: medtech-productservice-nginx
+    ports:
+      - "8002:80"
+    volumes:
+      - .:/var/www
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - productservice-app
+    networks:
+      - medtech-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  medtech-network:
+    external: true
+    name: medtech-network
