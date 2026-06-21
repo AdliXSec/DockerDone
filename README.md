@@ -19,7 +19,7 @@ project-root/
 ├── rabbitmq/
 │   └── docker-compose.yml          # RabbitMQ + Network creator
 ├── userservice/
-│   ├── docker-compose.yml          # Flask App + MySQL (2 container)
+│   ├── docker-compose.yml          # Flask App + PostgreSQL (2 container)
 │   └── Dockerfile
 ├── orderservice/
 │   ├── docker-compose.yml          # PHP-FPM + Nginx + MySQL (3 container)
@@ -101,11 +101,11 @@ Setelah semuanya berjalan, Anda bisa mengakses layanan melalui browser:
 |---------------|-------|------|--------|
 | `medtech-rabbitmq` | rabbitmq:3-management | 5672, 15672 | Message Broker |
 | `medtech-userservice` | custom (Python Flask) | 5001 | User Service App |
-| `medtech-userservice-db` | mysql:8.0 | 3307 | User Service Database |
-| `medtech-orderservice` | custom (PHP-FPM) | - | Order Service App |
+| `medtech-userservice-db` | postgres:16-alpine | 5432 | User Service Database (PostgreSQL) |
+| `medtech-orderservice` | custom (PHP-FPM) | - | Order Service App (REST + GraphQL) |
 | `medtech-orderservice-nginx` | nginx:stable-alpine | 8001 | Order Service Web Server |
 | `medtech-orderservice-db` | mysql:8.0 | 3308 | Order Service Database |
-| `medtech-productservice` | custom (PHP-FPM) | - | Product Service App |
+| `medtech-productservice` | custom (PHP-FPM) | - | Product Service App (REST + GraphQL) |
 | `medtech-productservice-nginx` | nginx:stable-alpine | 8002 | Product Service Web Server |
 | `medtech-productservice-db` | mysql:8.0 | 3309 | Product Service Database |
 | `medtech-uiservice` | custom (PHP-FPM) | - | UI Service App |

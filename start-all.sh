@@ -59,29 +59,29 @@ sleep 30
 # ---- User Service (Python) ----
 echo ""
 echo "[SETUP] Setting up User Service (Python)..."
-docker exec -it medtech-userservice python init_db.py || true
-docker exec -it medtech-userservice python seed.py || true
+docker exec medtech-userservice python init_db.py || true
+docker exec medtech-userservice python seed.py || true
 
 # ---- UI Service (Laravel) ----
 echo ""
 echo "[SETUP] Setting up UI Service (Laravel)..."
 echo "  Installing dependencies..."
-docker exec -it medtech-uiservice composer install --prefer-dist --optimize-autoloader --no-dev --no-interaction
-docker exec -it medtech-uiservice sh -c "php artisan key:generate --force && php artisan optimize:clear && php artisan migrate --force"
+docker exec medtech-uiservice composer install --prefer-dist --optimize-autoloader --no-dev --no-interaction
+docker exec medtech-uiservice sh -c "php artisan key:generate --force && php artisan optimize:clear && php artisan migrate --force"
 
 # ---- Order Service (Laravel) ----
 echo ""
 echo "[SETUP] Setting up Order Service (Laravel)..."
 echo "  Installing dependencies..."
-docker exec -it medtech-orderservice composer install --prefer-dist --optimize-autoloader --no-dev --no-interaction
-docker exec -it medtech-orderservice sh -c "php artisan key:generate --force && php artisan optimize:clear && php artisan migrate --force"
+docker exec medtech-orderservice composer update --prefer-dist --optimize-autoloader --no-dev --no-interaction
+docker exec medtech-orderservice sh -c "php artisan key:generate --force && php artisan optimize:clear && php artisan migrate --force"
 
 # ---- Product Service (Laravel) ----
 echo ""
 echo "[SETUP] Setting up Product Service (Laravel)..."
 echo "  Installing dependencies..."
-docker exec -it medtech-productservice composer install --prefer-dist --optimize-autoloader --no-dev --no-interaction
-docker exec -it medtech-productservice sh -c "php artisan key:generate --force && php artisan optimize:clear && php artisan migrate --force && php artisan db:seed --class=ObatSeeder --force"
+docker exec medtech-productservice composer install --prefer-dist --optimize-autoloader --no-dev --no-interaction
+docker exec medtech-productservice sh -c "php artisan key:generate --force && php artisan optimize:clear && php artisan migrate --force && php artisan db:seed --class=ObatSeeder --force"
 
 # ---- Queue Workers ----
 echo ""

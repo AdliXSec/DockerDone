@@ -7,6 +7,24 @@ use Illuminate\Support\Facades\Http;
 
 class ObatController extends Controller
 {
+    /**
+     * Helper: Kirim GraphQL request ke Product Service
+     */
+    private function graphql($query, $variables = [], $token = null)
+    {
+        $url = rtrim(env('PRODUCT_SERVICE_URL'), '/') . '/graphql';
+
+        $request = Http::timeout(60)->withOptions(['force_ip_resolve' => 'v4']);
+        if ($token) {
+            $request = $request->withToken($token);
+        }
+
+        return $request->post($url, [
+            'query' => $query,
+            'variables' => $variables,
+        ]);
+    }
+
     public function index(Request $request)
     {
         if (!session()->has('api_token')) {
@@ -15,34 +33,60 @@ class ObatController extends Controller
 
         // 1. Tangkap ID dari form pencarian
         $searchId = $request->input('search_id');
-
-        // Base URL API Obat
-        $apiUrl = env('PRODUCT_SERVICE_URL') . '/obat';
+        $token = session('api_token');
         $obatList = [];
 
         try {
             if ($searchId) {
-                // JIKA MENCARI ID: Tembak ke endpoint /api/obat/{id}
-                $response = Http::withToken(session('api_token'))->get($apiUrl . '/' . $searchId);
+                // JIKA MENCARI ID: Gunakan query obat(id) via GraphQL
+                $query = '
+                    query GetObat($id: ID!) {
+                        obat(id: $id) {
+                            id
+                            name
+                            category
+                            price
+                            stock
+                            description
+                            created_at
+                            updated_at
+                        }
+                    }
+                ';
+                $response = $this->graphql($query, ['id' => $searchId], $token);
             } else {
-                // JIKA KOSONG: Tembak ke endpoint /api/obat (Ambil Semua)
-                $response = Http::withToken(session('api_token'))->get($apiUrl);
+                // JIKA KOSONG: Gunakan query obats via GraphQL (Ambil Semua)
+                $query = '
+                    query {
+                        obats {
+                            id
+                            name
+                            category
+                            price
+                            stock
+                            description
+                            created_at
+                            updated_at
+                        }
+                    }
+                ';
+                $response = $this->graphql($query, [], $token);
             }
 
             if ($response->successful()) {
-                $data = $response->json('data');
+                $json = $response->json();
 
-                // PERHATIAN: Jika mencari by ID, API hanya mengembalikan 1 Objek (bukan Array).
-                // Agar @forelse di Blade tidak error, kita harus membungkus 1 objek itu ke dalam Array.
-                if ($searchId && !empty($data)) {
-                    $obatList = [$data];
+                if ($searchId) {
+                    // GraphQL mengembalikan single object di data.obat
+                    $data = $json['data']['obat'] ?? null;
+                    $obatList = $data ? [$data] : [];
                 } else {
-                    // Jika ambil semua, datanya memang sudah Array
-                    $obatList = $data ?? [];
+                    // GraphQL mengembalikan array di data.obats
+                    $obatList = $json['data']['obats'] ?? [];
                 }
             }
         } catch (\Exception $e) {
-            session()->flash('warning', 'Layanan Katalog Obat sedang tidak dapat diakses.');
+            session()->flash('warning', 'Layanan Katalog Obat sedang tidak dapat diakses: ' . $e->getMessage());
         }
 
         return view('obat', compact('obatList'));
@@ -56,26 +100,43 @@ class ObatController extends Controller
             return redirect('/obat');
         }
 
-        // 2. Siapkan data Payload sesuai dengan struktur JSON API Product Service
-        $payload = [
-            'name' => $request->input('name'),
-            'category' => $request->input('category'),
-            'price' => (int) $request->input('price'),
-            'stock' => (int) $request->input('stock'),
-            'description' => $request->input('description'),
+        $token = session('api_token');
+
+        // 2. Siapkan mutation GraphQL createObat
+        $query = '
+            mutation CreateObat($input: CreateObatInput!) {
+                createObat(input: $input) {
+                    id
+                    name
+                    category
+                    price
+                    stock
+                    description
+                }
+            }
+        ';
+
+        $variables = [
+            'input' => [
+                'name' => $request->input('name'),
+                'category' => $request->input('category'),
+                'price' => (float) $request->input('price'),
+                'stock' => (int) $request->input('stock'),
+                'description' => $request->input('description'),
+            ]
         ];
 
-        $apiUrl = env('PRODUCT_SERVICE_URL') . '/obat';
-
         try {
-            // 3. Tembak API menggunakan method POST dan bawa Token serta Payload
-            $response = Http::withToken(session('api_token'))->post($apiUrl, $payload);
+            // 3. Kirim mutation GraphQL dengan Token
+            $response = $this->graphql($query, $variables, $token);
 
             // 4. Evaluasi Hasil
-            if ($response->successful()) {
+            if ($response->successful() && !isset($response->json()['errors'])) {
                 session()->flash('success', 'Berhasil! Data obat baru telah tersimpan di database.');
             } else {
-                session()->flash('warning', 'Gagal menyimpan data ke API. Periksa kembali isian Anda.');
+                $errors = $response->json()['errors'] ?? [];
+                $msg = $errors[0]['message'] ?? 'Gagal menyimpan data ke API. Periksa kembali isian Anda.';
+                session()->flash('warning', $msg);
             }
         } catch (\Exception $e) {
             session()->flash('warning', 'Layanan API Obat sedang down. Tidak dapat menyimpan data.');
@@ -91,24 +152,42 @@ class ObatController extends Controller
             return redirect('/obat')->withErrors(['login_error' => 'Akses ditolak!']);
         }
 
-        $payload = [
-            'name' => $request->input('name'),
-            'category' => $request->input('category'),
-            'price' => (int) $request->input('price'),
-            'stock' => (int) $request->input('stock'),
-            'description' => $request->input('description', ''), // Bisa kosong
+        $token = session('api_token');
+
+        $query = '
+            mutation UpdateObat($input: UpdateObatInput!) {
+                updateObat(input: $input) {
+                    id
+                    name
+                    category
+                    price
+                    stock
+                    description
+                }
+            }
+        ';
+
+        $variables = [
+            'input' => [
+                'id' => $id,
+                'name' => $request->input('name'),
+                'category' => $request->input('category'),
+                'price' => (float) $request->input('price'),
+                'stock' => (int) $request->input('stock'),
+                'description' => $request->input('description', ''),
+            ]
         ];
 
-        $apiUrl = env('PRODUCT_SERVICE_URL') . '/obat/' . $id;
-
         try {
-            // Gunakan PUT untuk mengupdate data
-            $response = Http::withToken(session('api_token'))->put($apiUrl, $payload);
+            // Gunakan mutation GraphQL untuk mengupdate data
+            $response = $this->graphql($query, $variables, $token);
 
-            if ($response->successful()) {
+            if ($response->successful() && !isset($response->json()['errors'])) {
                 session()->flash('success', 'Data obat berhasil diperbarui.');
             } else {
-                session()->flash('warning', 'Gagal memperbarui data. Pastikan format benar.');
+                $errors = $response->json()['errors'] ?? [];
+                $msg = $errors[0]['message'] ?? 'Gagal memperbarui data. Pastikan format benar.';
+                session()->flash('warning', $msg);
             }
         } catch (\Exception $e) {
             session()->flash('warning', 'Layanan API Obat sedang down.');
@@ -123,16 +202,27 @@ class ObatController extends Controller
             return redirect('/obat')->withErrors(['login_error' => 'Akses ditolak!']);
         }
 
-        $apiUrl = env('PRODUCT_SERVICE_URL') . '/obat/' . $id;
+        $token = session('api_token');
+
+        $query = '
+            mutation DeleteObat($id: ID!) {
+                deleteObat(id: $id) {
+                    id
+                    name
+                }
+            }
+        ';
 
         try {
-            // Gunakan DELETE untuk menghapus data
-            $response = Http::withToken(session('api_token'))->delete($apiUrl);
+            // Gunakan mutation GraphQL untuk menghapus data
+            $response = $this->graphql($query, ['id' => $id], $token);
 
-            if ($response->successful()) {
+            if ($response->successful() && !isset($response->json()['errors'])) {
                 session()->flash('success', 'Data obat berhasil dihapus dari sistem.');
             } else {
-                session()->flash('warning', 'Gagal menghapus data obat.');
+                $errors = $response->json()['errors'] ?? [];
+                $msg = $errors[0]['message'] ?? 'Gagal menghapus data obat.';
+                session()->flash('warning', $msg);
             }
         } catch (\Exception $e) {
             session()->flash('warning', 'Layanan API Obat sedang down.');

@@ -22,8 +22,8 @@ services:
       - DB_USERNAME=user
       - DB_PASSWORD=password
       - USER_SERVICE_URL=http://medtech-userservice:5000
-      - ORDER_SERVICE_URL=http://medtech-orderservice-nginx:80/api
-      - PRODUCT_SERVICE_URL=http://medtech-productservice-nginx:80/api
+      - ORDER_SERVICE_URL=http://medtech-orderservice-nginx:80
+      - PRODUCT_SERVICE_URL=http://medtech-productservice-nginx:80
     command: >
       sh -c "
         mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache &&

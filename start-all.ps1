@@ -64,36 +64,36 @@ Start-Sleep -Seconds 30
 # ---- User Service (Python) ----
 Write-Host ""
 Write-Host "[SETUP] Setting up User Service (Python)..." -ForegroundColor Yellow
-docker exec -it medtech-userservice python init_db.py
-docker exec -it medtech-userservice python seed.py
+docker exec medtech-userservice python init_db.py
+docker exec medtech-userservice python seed.py
 
 # ---- UI Service (Laravel) ----
 Write-Host ""
 Write-Host "[SETUP] Setting up UI Service (Laravel)..." -ForegroundColor Yellow
 Write-Host "  Installing dependencies..." -ForegroundColor Gray
-docker exec -it medtech-uiservice composer install --prefer-dist --optimize-autoloader --no-dev --no-interaction
-docker exec -it medtech-uiservice php artisan key:generate --force
-docker exec -it medtech-uiservice php artisan optimize:clear
-docker exec -it medtech-uiservice php artisan migrate --force
+docker exec medtech-uiservice composer install --prefer-dist --optimize-autoloader --no-dev --no-interaction
+docker exec medtech-uiservice php artisan key:generate --force
+docker exec medtech-uiservice php artisan optimize:clear
+docker exec medtech-uiservice php artisan migrate --force
 
 # ---- Order Service (Laravel) ----
 Write-Host ""
 Write-Host "[SETUP] Setting up Order Service (Laravel)..." -ForegroundColor Yellow
 Write-Host "  Installing dependencies..." -ForegroundColor Gray
-docker exec -it medtech-orderservice composer install --prefer-dist --optimize-autoloader --no-dev --no-interaction
-docker exec -it medtech-orderservice php artisan key:generate --force
-docker exec -it medtech-orderservice php artisan optimize:clear
-docker exec -it medtech-orderservice php artisan migrate --force
+docker exec medtech-orderservice composer update --prefer-dist --optimize-autoloader --no-dev --no-interaction
+docker exec medtech-orderservice php artisan key:generate --force
+docker exec medtech-orderservice php artisan optimize:clear
+docker exec medtech-orderservice php artisan migrate --force
 
 # ---- Product Service (Laravel) ----
 Write-Host ""
 Write-Host "[SETUP] Setting up Product Service (Laravel)..." -ForegroundColor Yellow
 Write-Host "  Installing dependencies..." -ForegroundColor Gray
-docker exec -it medtech-productservice composer install --prefer-dist --optimize-autoloader --no-dev --no-interaction
-docker exec -it medtech-productservice php artisan key:generate --force
-docker exec -it medtech-productservice php artisan optimize:clear
-docker exec -it medtech-productservice php artisan migrate --force
-docker exec -it medtech-productservice php artisan db:seed --class=ObatSeeder --force
+docker exec medtech-productservice composer install --prefer-dist --optimize-autoloader --no-dev --no-interaction
+docker exec medtech-productservice php artisan key:generate --force
+docker exec medtech-productservice php artisan optimize:clear
+docker exec medtech-productservice php artisan migrate --force
+docker exec medtech-productservice php artisan db:seed --class=ObatSeeder --force
 
 # ---- Queue Workers ----
 Write-Host ""

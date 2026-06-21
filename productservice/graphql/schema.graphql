@@ -40,7 +40,7 @@ input UpdateObatInput {
 
 # Mutation and Resolver
 type Mutation {
-  createObat(input: CreateObatInput!): Obat @field(resolver: "App\\GraphQL\\Mutations\\ObatMutations@create") @middleware(checks: ["check.role"])
-  updateObat(input: UpdateObatInput!): Obat @field(resolver: "App\\GraphQL\\Mutations\\ObatMutations@update") @middleware(checks: ["check.role"])
-  deleteObat(id: ID!): Obat @field(resolver: "App\\GraphQL\\Mutations\\ObatMutations@delete") @middleware(checks: ["check.role"])
+  createObat(input: CreateObatInput!): Obat @field(resolver: "App\\GraphQL\\Mutations\\ObatMutations@create")
+  updateObat(input: UpdateObatInput!): Obat @field(resolver: "App\\GraphQL\\Mutations\\ObatMutations@update")
+  deleteObat(id: ID!): Obat @field(resolver: "App\\GraphQL\\Mutations\\ObatMutations@delete")
 }

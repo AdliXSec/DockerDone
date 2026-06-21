@@ -1,6 +1,6 @@
 flask
 flask-sqlalchemy
-pymysql
+psycopg2-binary
 flask-bcrypt
 flask-jwt-extended
 python-dotenv

@@ -30,6 +30,7 @@ class VerifyUserLogin
             $userServiceUrl = 'http://medtech-userservice:5000';
             // Forward token ke User Service endpoint /is_login
             $response = Http::timeout(5)
+                ->withOptions(['force_ip_resolve' => 'v4'])
                 ->withHeaders([
                     'Authorization' => 'Bearer ' . $token,
                 ])

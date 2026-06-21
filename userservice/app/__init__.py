@@ -17,7 +17,7 @@ def create_app():
     app = Flask(__name__)
 
     # Konfigurasi dari Environment Variables (.env)
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'mysql+pymysql://root:@localhost/flask_db')
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'postgresql+psycopg2://user:password@localhost/users_db')
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
     # Konfigurasi JWT

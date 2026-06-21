@@ -28,7 +28,7 @@ services:
       - RABBITMQ_PASSWORD=guest
       - RABBITMQ_VHOST=/
       - USER_SERVICE_URL=http://medtech-userservice:5000
-      - PRODUCT_SERVICE_URL=http://medtech-productservice-nginx:80/api
+      - PRODUCT_SERVICE_URL=http://medtech-productservice-nginx:80
     command: >
       sh -c "
         mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache &&

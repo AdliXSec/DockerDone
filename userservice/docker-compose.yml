@@ -12,7 +12,7 @@ services:
     ports:
       - "5001:5000"
     environment:
-      - DATABASE_URL=mysql+pymysql://user:password@userservice-db/users_db
+      - DATABASE_URL=postgresql+psycopg2://user:password@userservice-db/users_db
       - JWT_SECRET_KEY=HTELXPM5abn2unNMin7J!7^*&rmEKDUL188gH8NDbeaLrvHk!$@*&
       - RABBITMQ_HOST=medtech-rabbitmq
     volumes:
@@ -25,21 +25,20 @@ services:
     restart: unless-stopped
 
   userservice-db:
-    image: mysql:8.0
+    image: postgres:16-alpine
     container_name: medtech-userservice-db
     ports:
-      - "3307:3306"
+      - "5432:5432"
     environment:
-      - MYSQL_ROOT_PASSWORD=rootpassword
-      - MYSQL_DATABASE=users_db
-      - MYSQL_USER=user
-      - MYSQL_PASSWORD=password
+      - POSTGRES_DB=users_db
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
     volumes:
-      - userservice_db_data:/var/lib/mysql
+      - userservice_db_data:/var/lib/postgresql/data
     networks:
       - medtech-network
     healthcheck:
-      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
+      test: [ "CMD-SHELL", "pg_isready -U user -d users_db" ]
       interval: 10s
       timeout: 5s
       retries: 5

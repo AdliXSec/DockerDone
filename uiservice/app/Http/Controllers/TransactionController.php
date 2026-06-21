@@ -7,6 +7,24 @@ use Illuminate\Support\Facades\Http;
 
 class TransactionController extends Controller
 {
+    /**
+     * Helper: Kirim GraphQL request ke Order Service
+     */
+    private function graphql($query, $variables = [], $token = null)
+    {
+        $url = rtrim(env('ORDER_SERVICE_URL'), '/') . '/graphql';
+
+        $request = Http::timeout(60)->withOptions(['force_ip_resolve' => 'v4']);
+        if ($token) {
+            $request = $request->withToken($token);
+        }
+
+        return $request->post($url, [
+            'query' => $query,
+            'variables' => $variables,
+        ]);
+    }
+
     public function index()
     {
         if (!session()->has('api_token')) {
@@ -19,17 +37,61 @@ class TransactionController extends Controller
         $orders = [];
 
         try {
-            // Jika admin, ambil semua. Jika user, ambil berdasarkan ID user
-            $url = ($role == 'admin') 
-                ? env('ORDER_SERVICE_URL') . '/orders' 
-                : env('ORDER_SERVICE_URL') . '/orders/user/' . $userId;
+            if ($role == 'admin') {
+                // Admin: ambil semua order via GraphQL query orders
+                $query = '
+                    query {
+                        orders {
+                            id
+                            order_code
+                            user_id
+                            customer_name
+                            customer_email
+                            product_id
+                            quantity
+                            total_price
+                            status
+                            created_at
+                            updated_at
+                        }
+                    }
+                ';
+                $response = $this->graphql($query, [], $token);
+            } else {
+                // User: ambil order berdasarkan user_id via GraphQL query ordersByUser
+                $query = '
+                    query GetOrdersByUser($user_id: ID!) {
+                        ordersByUser(user_id: $user_id) {
+                            id
+                            order_code
+                            user_id
+                            customer_name
+                            customer_email
+                            product_id
+                            quantity
+                            total_price
+                            status
+                            created_at
+                            updated_at
+                        }
+                    }
+                ';
+                $response = $this->graphql($query, ['user_id' => (int) $userId], $token);
+            }
 
-            $response = Http::withToken($token)->get($url);
-            
             if ($response->successful()) {
                 $json = $response->json();
-                $orders = $json['data'] ?? [];
-                if (!is_array($orders)) $orders = [];
+
+                if (isset($json['errors'])) {
+                    session()->flash('warning', $json['errors'][0]['message'] ?? 'Terjadi kesalahan.');
+                } else {
+                    if ($role == 'admin') {
+                        $orders = $json['data']['orders'] ?? [];
+                    } else {
+                        $orders = $json['data']['ordersByUser'] ?? [];
+                    }
+                    if (!is_array($orders)) $orders = [];
+                }
             }
         } catch (\Exception $e) {
             session()->flash('warning', 'Layanan Transaksi sedang tidak tersedia.');
@@ -44,28 +106,50 @@ class TransactionController extends Controller
             return redirect('/login');
         }
 
+        $token = session('api_token');
+
         // Get user data from is_login to get the ID
-        $userResponse = Http::withToken(session('api_token'))->get('http://medtech-userservice:5000/is_login');
+        $userResponse = Http::withToken($token)->get('http://medtech-userservice:5000/is_login');
         $userData = $userResponse->json('data');
 
         if (!$userData) {
             return back()->with('warning', 'Sesi tidak valid, silakan login ulang.');
         }
 
-        $payload = [
-            'user_id' => $userData['id'],
-            'product_id' => $request->obat_id,
-            'quantity' => (int) ($request->quantity ?? 1),
+        // Gunakan mutation GraphQL createOrder
+        $query = '
+            mutation CreateOrder($input: CreateOrderInput!) {
+                createOrder(input: $input) {
+                    id
+                    order_code
+                    user_id
+                    customer_name
+                    customer_email
+                    product_id
+                    quantity
+                    total_price
+                    status
+                    created_at
+                }
+            }
+        ';
+
+        $variables = [
+            'input' => [
+                'product_id' => (int) $request->obat_id,
+                'quantity' => (int) ($request->quantity ?? 1),
+            ]
         ];
 
         try {
-            $response = Http::withToken(session('api_token'))->post(env('ORDER_SERVICE_URL') . '/orders', $payload);
-            
-            if ($response->successful()) {
+            $response = $this->graphql($query, $variables, $token);
+
+            if ($response->successful() && !isset($response->json()['errors'])) {
                 session()->flash('success', 'Berhasil memesan obat!');
                 return redirect('/transaksi');
             } else {
-                $error = $response->json('message') ?? 'Gagal memproses pesanan.';
+                $errors = $response->json()['errors'] ?? [];
+                $error = $errors[0]['message'] ?? 'Gagal memproses pesanan.';
                 session()->flash('warning', $error);
                 return back();
             }
@@ -81,16 +165,32 @@ class TransactionController extends Controller
             return back()->with('warning', 'Hanya admin yang dapat mengubah status.');
         }
 
-        try {
-            // Kita panggil endpoint PATCH/PUT status di Order Service
-            $response = Http::withToken(session('api_token'))->patch(env('ORDER_SERVICE_URL') . '/orders/' . $id . '/status', [
-                'status' => $request->status
-            ]);
+        $token = session('api_token');
 
-            if ($response->successful()) {
+        // Gunakan mutation GraphQL updateOrderStatus
+        $query = '
+            mutation UpdateOrderStatus($id: ID!, $status: String!) {
+                updateOrderStatus(id: $id, status: $status) {
+                    id
+                    status
+                }
+            }
+        ';
+
+        $variables = [
+            'id' => $id,
+            'status' => $request->status,
+        ];
+
+        try {
+            $response = $this->graphql($query, $variables, $token);
+
+            if ($response->successful() && !isset($response->json()['errors'])) {
                 session()->flash('success', 'Status pesanan berhasil diperbarui.');
             } else {
-                session()->flash('warning', 'Gagal memperbarui status di server.');
+                $errors = $response->json()['errors'] ?? [];
+                $msg = $errors[0]['message'] ?? 'Gagal memperbarui status di server.';
+                session()->flash('warning', $msg);
             }
         } catch (\Exception $e) {
             session()->flash('warning', 'Koneksi ke Order Service gagal.');
@@ -105,12 +205,24 @@ class TransactionController extends Controller
             return redirect('/login');
         }
 
+        $token = session('api_token');
+
+        // Gunakan mutation GraphQL deleteOrder
+        $query = '
+            mutation DeleteOrder($id: ID!) {
+                deleteOrder(id: $id)
+            }
+        ';
+
         try {
-            $response = Http::withToken(session('api_token'))->delete(env('ORDER_SERVICE_URL') . '/orders/' . $id);
-            if ($response->successful()) {
+            $response = $this->graphql($query, ['id' => $id], $token);
+
+            if ($response->successful() && !isset($response->json()['errors'])) {
                 session()->flash('success', 'Pesanan berhasil dihapus.');
             } else {
-                session()->flash('warning', 'Gagal menghapus pesanan.');
+                $errors = $response->json()['errors'] ?? [];
+                $msg = $errors[0]['message'] ?? 'Gagal menghapus pesanan.';
+                session()->flash('warning', $msg);
             }
         } catch (\Exception $e) {
             session()->flash('warning', 'Koneksi ke Order Service terputus.');
@@ -119,4 +231,3 @@ class TransactionController extends Controller
         return redirect('/transaksi');
     }
 }
-

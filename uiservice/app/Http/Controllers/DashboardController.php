@@ -19,41 +19,80 @@ class DashboardController extends Controller
         $totalPesanan = 0;
         $totalUser = 0;
 
-        // 1. Fetch Total Obat (Product Service)
+        // 1. Fetch Total Obat (Product Service via GraphQL)
         try {
-            $productResponse = Http::withToken($token)->timeout(5)->get(env('PRODUCT_SERVICE_URL') . '/obat');
+            $productGraphqlUrl = rtrim(env('PRODUCT_SERVICE_URL'), '/') . '/graphql';
+
+            $query = '
+                query {
+                    obats {
+                        id
+                    }
+                }
+            ';
+
+            $productResponse = Http::withToken($token)->timeout(60)->withOptions(['force_ip_resolve' => 'v4'])->post($productGraphqlUrl, [
+                'query' => $query,
+            ]);
+
             if ($productResponse->successful()) {
                 $json = $productResponse->json();
-                $data = $json['data'] ?? [];
+                $data = $json['data']['obats'] ?? [];
                 $totalObat = is_array($data) ? count($data) : 0;
             }
         } catch (\Exception $e) {
             session()->flash('warning_obat', 'Gagal memuat data obat.');
         }
 
-        // 2. Fetch Total Pesanan (Order Service)
+        // 2. Fetch Total Pesanan (Order Service via GraphQL)
         try {
+            $orderGraphqlUrl = rtrim(env('ORDER_SERVICE_URL'), '/') . '/graphql';
             $userId = session('user_id');
             $role = session('user_role');
             
-            $url = ($role == 'admin') 
-                ? env('ORDER_SERVICE_URL') . '/orders' 
-                : env('ORDER_SERVICE_URL') . '/orders/user/' . $userId;
+            if ($role == 'admin') {
+                $query = '
+                    query {
+                        orders {
+                            id
+                        }
+                    }
+                ';
+                $orderResponse = Http::withToken($token)->timeout(60)->withOptions(['force_ip_resolve' => 'v4'])->post($orderGraphqlUrl, [
+                    'query' => $query,
+                ]);
 
-            $orderResponse = Http::withToken($token)->timeout(5)->get($url);
-            
-            if ($orderResponse->successful()) {
-                $json = $orderResponse->json();
-                $data = $json['data'] ?? [];
-                $totalPesanan = is_array($data) ? count($data) : 0;
+                if ($orderResponse->successful()) {
+                    $json = $orderResponse->json();
+                    $data = $json['data']['orders'] ?? [];
+                    $totalPesanan = is_array($data) ? count($data) : 0;
+                }
+            } else {
+                $query = '
+                    query GetOrdersByUser($user_id: ID!) {
+                        ordersByUser(user_id: $user_id) {
+                            id
+                        }
+                    }
+                ';
+                $orderResponse = Http::withToken($token)->timeout(60)->withOptions(['force_ip_resolve' => 'v4'])->post($orderGraphqlUrl, [
+                    'query' => $query,
+                    'variables' => ['user_id' => (string) $userId],
+                ]);
+
+                if ($orderResponse->successful()) {
+                    $json = $orderResponse->json();
+                    $data = $json['data']['ordersByUser'] ?? [];
+                    $totalPesanan = is_array($data) ? count($data) : 0;
+                }
             }
         } catch (\Exception $e) {
             session()->flash('warning_order', 'Gagal memuat data transaksi.');
         }
 
-        // 3. Fetch Total User (User Service)
+        // 3. Fetch Total User (User Service - tetap RESTful karena Flask)
         try {
-            $userResponse = Http::withToken($token)->timeout(5)->get('http://medtech-userservice:5000/users');
+            $userResponse = Http::withToken($token)->timeout(60)->withOptions(['force_ip_resolve' => 'v4'])->get('http://medtech-userservice:5000/users');
             if ($userResponse->successful()) {
                 $json = $userResponse->json();
                 $data = $json['data'] ?? [];
@@ -66,4 +105,3 @@ class DashboardController extends Controller
         return view('dashboard', compact('totalObat', 'totalPesanan', 'totalUser'));
     }
 }
-
