@@ -7,227 +7,276 @@ use Illuminate\Support\Facades\Http;
 
 class ObatController extends Controller
 {
-    /**
-     * Helper: Kirim GraphQL request ke Product Service
-     */
-    private function graphql($query, $variables = [], $token = null)
-    {
-        $url = rtrim(env('PRODUCT_SERVICE_URL'), '/') . '/graphql';
-
-        $request = Http::timeout(60)->withOptions(['force_ip_resolve' => 'v4']);
-        if ($token) {
-            $request = $request->withToken($token);
-        }
-
-        return $request->post($url, [
-            'query' => $query,
-            'variables' => $variables,
-        ]);
-    }
-
     public function index(Request $request)
     {
         if (!session()->has('api_token')) {
-            return redirect('/login')->withErrors(['login_error' => 'Sesi berakhir, silakan login.']);
+            return redirect('/login')
+                ->withErrors([
+                    'login_error' => 'Sesi berakhir, silakan login.'
+                ]);
         }
-
-        // 1. Tangkap ID dari form pencarian
         $searchId = $request->input('search_id');
-        $token = session('api_token');
         $obatList = [];
-
         try {
             if ($searchId) {
-                // JIKA MENCARI ID: Gunakan query obat(id) via GraphQL
-                $query = '
-                    query GetObat($id: ID!) {
-                        obat(id: $id) {
-                            id
-                            name
-                            category
-                            price
-                            stock
-                            description
-                            created_at
-                            updated_at
+                $payload = [
+                    'query' => '
+                        query GetObat($id: bigint!) {
+                            obats_by_pk(id: $id) {
+                                id
+                                name
+                                category
+                                price
+                                stock
+                                description
+                            }
                         }
+                    ',
+                    'variables' => [
+                        'id' => (int) $searchId
+                    ]
+                ];
+                $response = Http::withHeaders([
+                    'x-hasura-admin-secret' => env('HASURA_ADMIN_SECRET'),
+                    'Content-Type' => 'application/json',
+                ])->post(env('HASURA_URL'), $payload);
+                if ($response->successful()) {
+                    $data = $response->json()['data']['obats_by_pk'] ?? null;
+                    if ($data) {
+                        $obatList = [$data];
                     }
-                ';
-                $response = $this->graphql($query, ['id' => $searchId], $token);
+                }
             } else {
-                // JIKA KOSONG: Gunakan query obats via GraphQL (Ambil Semua)
-                $query = '
-                    query {
-                        obats {
-                            id
-                            name
-                            category
-                            price
-                            stock
-                            description
-                            created_at
-                            updated_at
+                $payload = [
+                    'query' => '
+                        query {
+                            obats(order_by: {id: asc}) {
+                                id
+                                name
+                                category
+                                price
+                                stock
+                                description
+                            }
                         }
-                    }
-                ';
-                $response = $this->graphql($query, [], $token);
-            }
-
-            if ($response->successful()) {
-                $json = $response->json();
-
-                if ($searchId) {
-                    // GraphQL mengembalikan single object di data.obat
-                    $data = $json['data']['obat'] ?? null;
-                    $obatList = $data ? [$data] : [];
-                } else {
-                    // GraphQL mengembalikan array di data.obats
-                    $obatList = $json['data']['obats'] ?? [];
+                    '
+                ];
+                $response = Http::withHeaders([
+                    'x-hasura-admin-secret' => env('HASURA_ADMIN_SECRET'),
+                    'Content-Type' => 'application/json',
+                ])->post(env('HASURA_URL'), $payload);
+                if ($response->successful()) {
+                    $obatList =
+                        $response->json()['data']['obats']
+                        ?? [];
                 }
             }
         } catch (\Exception $e) {
-            session()->flash('warning', 'Layanan Katalog Obat sedang tidak dapat diakses: ' . $e->getMessage());
+            session()->flash(
+                'warning',
+                'Layanan katalog obat tidak dapat diakses.'
+            );
         }
-
         return view('obat', compact('obatList'));
     }
 
     public function store(Request $request)
-    {
-        // 1. Proteksi Ekstra: Pastikan hanya admin yang bisa memproses ini
-        if (session('user_role') != 'admin') {
-            session()->flash('warning', 'Akses ditolak! Anda bukan admin.');
-            return redirect('/obat');
-        }
-
-        $token = session('api_token');
-
-        // 2. Siapkan mutation GraphQL createObat
-        $query = '
-            mutation CreateObat($input: CreateObatInput!) {
-                createObat(input: $input) {
-                    id
-                    name
-                    category
-                    price
-                    stock
-                    description
-                }
-            }
-        ';
-
-        $variables = [
-            'input' => [
-                'name' => $request->input('name'),
-                'category' => $request->input('category'),
-                'price' => (float) $request->input('price'),
-                'stock' => (int) $request->input('stock'),
-                'description' => $request->input('description'),
-            ]
-        ];
-
-        try {
-            // 3. Kirim mutation GraphQL dengan Token
-            $response = $this->graphql($query, $variables, $token);
-
-            // 4. Evaluasi Hasil
-            if ($response->successful() && !isset($response->json()['errors'])) {
-                session()->flash('success', 'Berhasil! Data obat baru telah tersimpan di database.');
-            } else {
-                $errors = $response->json()['errors'] ?? [];
-                $msg = $errors[0]['message'] ?? 'Gagal menyimpan data ke API. Periksa kembali isian Anda.';
-                session()->flash('warning', $msg);
-            }
-        } catch (\Exception $e) {
-            session()->flash('warning', 'Layanan API Obat sedang down. Tidak dapat menyimpan data.');
-        }
-
-        // 5. Kembalikan user ke halaman katalog obat
-        return redirect('/obat');
+{
+    if (session('user_role') != 'admin') {
+        return redirect('/obat')
+            ->withErrors([
+                'login_error' => 'Akses ditolak!'
+            ]);
     }
 
+    $payload = [
+        'query' => '
+            mutation InsertObat(
+                $name: String!,
+                $category: String!,
+                $price: Int!,
+                $stock: Int!,
+                $description: String!
+            ) {
+                insert_obats_one(object: {
+                    name: $name,
+                    category: $category,
+                    price: $price,
+                    stock: $stock,
+                    description: $description
+                }) {
+                    id
+                    name
+                }
+            }
+        ',
+        'variables' => [
+            'name' => $request->name,
+            'category' => $request->category,
+            'price' => (int) $request->price,
+            'stock' => (int) $request->stock,
+            'description' => $request->description ?? ''
+        ]
+    ];
+
+    try {
+        $response = Http::withHeaders([
+            'x-hasura-admin-secret' => env('HASURA_ADMIN_SECRET'),
+            'Content-Type' => 'application/json',
+        ])->post(
+            env('HASURA_URL'),
+            $payload
+        );
+        // dd([ // 'status' => $response->status(),
+        //  'body' => $response->body(), 
+        // 'json' => $response->json() 
+        // ]);
+        if (
+            $response->successful() &&
+            !isset($response->json()['errors'])
+        ) {
+            session()->flash(
+                'success',
+                'Obat berhasil ditambahkan.'
+            );
+        } else {
+            session()->flash(
+                'warning',
+                'Gagal menambahkan obat.'
+            );
+        }
+    } catch (\Exception $e) {
+        session()->flash(
+            'warning',
+            'Layanan sedang bermasalah.'
+        );
+    }
+    return redirect('/obat');
+}
     public function update(Request $request, $id)
     {
         if (session('user_role') != 'admin') {
-            return redirect('/obat')->withErrors(['login_error' => 'Akses ditolak!']);
+            return redirect('/obat')
+                ->withErrors([
+                    'login_error' => 'Akses ditolak!'
+                ]);
         }
-
-        $token = session('api_token');
-
-        $query = '
-            mutation UpdateObat($input: UpdateObatInput!) {
-                updateObat(input: $input) {
-                    id
-                    name
-                    category
-                    price
-                    stock
-                    description
+        $payload = [
+            'query' => '
+                mutation UpdateObat(
+                    $id: bigint!,
+                    $name: String!,
+                    $category: String!,
+                    $price: Int!,
+                    $stock: Int!,
+                    $description: String!
+                ) {
+                    update_obats_by_pk(
+                        pk_columns: {
+                            id: $id
+                        },
+                        _set: {
+                            name: $name,
+                            category: $category,
+                            price: $price,
+                            stock: $stock,
+                            description: $description
+                        }
+                    ) {
+                        id
+                        name
+                    }
                 }
-            }
-        ';
-
-        $variables = [
-            'input' => [
-                'id' => $id,
+            ',
+            'variables' => [
+                'id' => (int) $id,
                 'name' => $request->input('name'),
                 'category' => $request->input('category'),
-                'price' => (float) $request->input('price'),
+                'price' => (int) $request->input('price'),
                 'stock' => (int) $request->input('stock'),
-                'description' => $request->input('description', ''),
+                'description' => $request->input('description', '')
             ]
         ];
-
         try {
-            // Gunakan mutation GraphQL untuk mengupdate data
-            $response = $this->graphql($query, $variables, $token);
-
-            if ($response->successful() && !isset($response->json()['errors'])) {
-                session()->flash('success', 'Data obat berhasil diperbarui.');
+            $response = Http::withHeaders([
+                'x-hasura-admin-secret' => env('HASURA_ADMIN_SECRET'),
+                'Content-Type' => 'application/json',
+            ])->post(
+                env('HASURA_URL'),
+                $payload
+            );
+            if (
+                $response->successful() &&
+                isset($response->json()['data']['update_obats_by_pk'])
+            ) {
+                session()->flash(
+                    'success',
+                    'Data obat berhasil diperbarui.'
+                );
             } else {
-                $errors = $response->json()['errors'] ?? [];
-                $msg = $errors[0]['message'] ?? 'Gagal memperbarui data. Pastikan format benar.';
-                session()->flash('warning', $msg);
+                session()->flash(
+                    'warning',
+                    'Gagal memperbarui data obat.'
+                );
             }
         } catch (\Exception $e) {
-            session()->flash('warning', 'Layanan API Obat sedang down.');
+            session()->flash(
+                'warning',
+                'Layanan Hasura sedang down.'
+            );
         }
-
         return redirect('/obat');
     }
 
     public function destroy($id)
     {
         if (session('user_role') != 'admin') {
-            return redirect('/obat')->withErrors(['login_error' => 'Akses ditolak!']);
+            return redirect('/obat')
+                ->withErrors([
+                    'login_error' => 'Akses ditolak!'
+                ]);
         }
-
-        $token = session('api_token');
-
-        $query = '
-            mutation DeleteObat($id: ID!) {
-                deleteObat(id: $id) {
-                    id
-                    name
+        $payload = [
+            'query' => '
+                mutation DeleteObat($id: bigint!) {
+                    delete_obats_by_pk(id: $id) {
+                        id
+                        name
+                    }
                 }
-            }
-        ';
-
+            ',
+            'variables' => [
+                'id' => (int) $id
+            ]
+        ];
         try {
-            // Gunakan mutation GraphQL untuk menghapus data
-            $response = $this->graphql($query, ['id' => $id], $token);
-
-            if ($response->successful() && !isset($response->json()['errors'])) {
-                session()->flash('success', 'Data obat berhasil dihapus dari sistem.');
+            $response = Http::withHeaders([
+                'x-hasura-admin-secret' => env('HASURA_ADMIN_SECRET'),
+                'Content-Type' => 'application/json',
+            ])->post(
+                env('HASURA_URL'),
+                $payload
+            );
+            if (
+                $response->successful() &&
+                isset($response->json()['data']['delete_obats_by_pk'])
+            ) {
+                session()->flash(
+                    'success',
+                    'Data obat berhasil dihapus.'
+                );
             } else {
-                $errors = $response->json()['errors'] ?? [];
-                $msg = $errors[0]['message'] ?? 'Gagal menghapus data obat.';
-                session()->flash('warning', $msg);
+                session()->flash(
+                    'warning',
+                    'Gagal menghapus data obat.'
+                );
             }
         } catch (\Exception $e) {
-            session()->flash('warning', 'Layanan API Obat sedang down.');
+            session()->flash(
+                'warning',
+                'Layanan Hasura sedang tidak tersedia.'
+            );
         }
-
         return redirect('/obat');
     }
-}
+    }
