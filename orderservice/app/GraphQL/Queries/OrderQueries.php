@@ -13,7 +13,7 @@ class OrderQueries
     public function __construct()
     {
         $this->userServiceUrl = config('services.user_service.url');
-        $this->productServiceUrl = config('services.product_service.url');
+        $this->productServiceUrl = env('PRODUCT_SERVICE_URL');
     }
 
     /**
@@ -52,20 +52,42 @@ class OrderQueries
      */
     protected function attachExternalData(Order $order)
     {
-        // Note: In a production environment, you might want to optimize this 
-        // using DataLoader to avoid N+1 issues with external HTTP calls.
-        
         $token = request()->bearerToken();
 
-        // Get Product Info
-        $productResponse = Http::withHeaders([
-            'Authorization' => 'Bearer ' . $token
-        ])->get("{$this->productServiceUrl}/obat/{$order->product_id}");
-        $order->product = $productResponse->json()['data'] ?? null;
+        // Get Product Info dari Hasura
+        $queryObat = '
+            query GetObat($id: Int!) {
+                obat_by_pk(id: $id) {
+                    id
+                    nama_obat
+                    price
+                    stock
+                }
+            }
+        ';
+
+        try {
+            $productResponse = Http::withHeaders([
+                'Authorization' => 'Bearer ' . $token,
+                'x-hasura-admin-secret' => env('HASURA_ADMIN_SECRET', 'admin123')
+            ])->post($this->productServiceUrl, [
+                'query' => $queryObat,
+                'variables' => [
+                    'id' => (int) $order->product_id
+                ]
+            ]);
+            $order->product = $productResponse->json()['data']['obat_by_pk'] ?? null;
+        } catch (\Exception $e) {
+            $order->product = null;
+        }
 
         // Get User Info
-        $userResponse = Http::get("{$this->userServiceUrl}/users/{$order->user_id}");
-        $order->user = $userResponse->json()['data'] ?? null;
+        try {
+            $userResponse = Http::get("{$this->userServiceUrl}/users/{$order->user_id}");
+            $order->user = $userResponse->json()['data'] ?? null;
+        } catch (\Exception $e) {
+            $order->user = null;
+        }
 
         return $order;
     }

@@ -15,7 +15,7 @@ class OrderMutations
     public function __construct()
     {
         $this->userServiceUrl = config('services.user_service.url');
-        $this->productServiceUrl = config('services.product_service.url');
+        $this->productServiceUrl = env('PRODUCT_SERVICE_URL'); // Langsung menunjuk Hasura
     }
 
     /**
@@ -34,14 +34,32 @@ class OrderMutations
             throw new \Exception("User not found");
         }
 
-        // Fetch Product Data
+        // Fetch Product Data dari Hasura
+        $queryObat = '
+            query GetObat($id: Int!) {
+                obat_by_pk(id: $id) {
+                    id
+                    nama_obat
+                    price
+                    stock
+                }
+            }
+        ';
+
         $productResponse = Http::withHeaders([
-            'Authorization' => 'Bearer ' . $token
-        ])->get("{$this->productServiceUrl}/obat/{$input['product_id']}");
-        $productData = $productResponse->json()['data'] ?? null;
+            'Authorization' => 'Bearer ' . $token,
+            'x-hasura-admin-secret' => env('HASURA_ADMIN_SECRET', 'admin123')
+        ])->post($this->productServiceUrl, [
+            'query' => $queryObat,
+            'variables' => [
+                'id' => (int) $input['product_id']
+            ]
+        ]);
+
+        $productData = $productResponse->json()['data']['obat_by_pk'] ?? null;
 
         if (!$productData) {
-            throw new \Exception("Product not found");
+            throw new \Exception("Product not found di Hasura");
         }
 
         // Check stock
@@ -79,14 +97,32 @@ class OrderMutations
         $productId = $input['product_id'] ?? $order->product_id;
         $quantity = $input['quantity'] ?? $order->quantity;
 
-        // Fetch Product Info
+        // Fetch Product Info dari Hasura
+        $queryObat = '
+            query GetObat($id: Int!) {
+                obat_by_pk(id: $id) {
+                    id
+                    nama_obat
+                    price
+                    stock
+                }
+            }
+        ';
+
         $productResponse = Http::withHeaders([
-            'Authorization' => 'Bearer ' . $token
-        ])->get("{$this->productServiceUrl}/obat/{$productId}");
-        $productData = $productResponse->json()['data'] ?? null;
+            'Authorization' => 'Bearer ' . $token,
+            'x-hasura-admin-secret' => env('HASURA_ADMIN_SECRET', 'admin123')
+        ])->post($this->productServiceUrl, [
+            'query' => $queryObat,
+            'variables' => [
+                'id' => (int) $productId
+            ]
+        ]);
+
+        $productData = $productResponse->json()['data']['obat_by_pk'] ?? null;
 
         if (!$productData) {
-            throw new \Exception("Product not found");
+            throw new \Exception("Product not found di Hasura");
         }
 
         // Stock Adjustment Logic
@@ -148,7 +184,7 @@ class OrderMutations
     private function generateOrderCode($user, $product)
     {
         $name = Str::slug($user['name'] ?? ($user['username'] ?? 'user'));
-        $item = Str::slug($product['name'] ?? ($product['nama_obat'] ?? 'item'));
+        $item = Str::slug($product['nama_obat'] ?? ($product['name'] ?? 'item'));
         return strtoupper("ORD-{$name}-{$item}-" . rand(1000, 9999));
     }
 }

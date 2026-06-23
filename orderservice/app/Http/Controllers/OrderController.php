@@ -22,6 +22,7 @@ class OrderController extends Controller
         $this->productServiceUrl = config('services.product_service.url');
     }
 
+    
     protected function fetchUserData($id)
     {
         if (!$id)
