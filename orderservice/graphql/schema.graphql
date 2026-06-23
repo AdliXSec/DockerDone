@@ -1,0 +1,80 @@
+scalar DateTime @scalar(class: "Nuwave\\Lighthouse\\Schema\\Types\\Scalars\\DateTime")
+
+type User {
+    id: ID!
+    name: String!
+    email: String!
+    email_verified_at: DateTime
+    created_at: DateTime
+    updated_at: DateTime
+}
+
+type Obat {
+    id: ID!
+    name: String
+    category: String
+    price: Float
+    stock: Int
+    description: String
+}
+
+type Order {
+    id: ID!
+    order_code: String!
+    user_id: ID!
+    customer_name: String!
+    customer_email: String!
+    product_id: ID!
+    quantity: Int!
+    total_price: Float!
+    status: OrderStatus!
+    user: User
+    product: Obat
+    created_at: DateTime
+    updated_at: DateTime
+}
+
+enum OrderStatus {
+    pending @enum(value: "pending")
+    processing @enum(value: "processing")
+    completed @enum(value: "completed")
+    cancelled @enum(value: "cancelled")
+}
+
+type Query {
+    orders: [Order!]!
+        @field(resolver: "App\\GraphQL\\Queries\\OrderQueries@all")
+    order(id: ID!): Order
+        @field(resolver: "App\\GraphQL\\Queries\\OrderQueries@find")
+    ordersByUser(user_id: ID!): [Order!]!
+        @field(resolver: "App\\GraphQL\\Queries\\OrderQueries@getByUser")
+}
+
+input CreateOrderInput {
+    user_id: ID!
+    product_id: ID!
+    quantity: Int!
+}
+
+input UpdateOrderInput {
+    id: ID!
+    product_id: ID
+    quantity: Int
+    status: OrderStatus
+}
+
+input UpdateOrderStatusInput {
+    id: ID!
+    status: OrderStatus!
+}
+
+type Mutation {
+    createOrder(input: CreateOrderInput!): Order
+        @field(resolver: "App\\GraphQL\\Mutations\\OrderMutations@create")
+    updateOrder(input: UpdateOrderInput!): Order
+        @field(resolver: "App\\GraphQL\\Mutations\\OrderMutations@update")
+    updateOrderStatus(input: UpdateOrderStatusInput!): Order
+        @field(resolver: "App\\GraphQL\\Mutations\\OrderMutations@updateStatus")
+    deleteOrder(id: ID!): Order
+        @field(resolver: "App\\GraphQL\\Mutations\\OrderMutations@delete")
+}

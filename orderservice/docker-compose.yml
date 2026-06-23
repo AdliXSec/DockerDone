@@ -1,0 +1,67 @@
+##############################################
+# Order Service (Laravel)
+# Command: docker compose up -d --build
+# Pastikan docker-compose.infra.yml sudah berjalan
+##############################################
+
+services:
+  orderservice-app:
+    build:
+      context: .
+    container_name: medtech-orderservice
+    ports:
+      - "8001:80"
+    environment:
+      - APP_ENV=local
+      - APP_KEY=${APP_KEY}
+      - DB_CONNECTION=mysql
+      - DB_HOST=orderservice-db
+      - DB_PORT=3306
+      - DB_DATABASE=orders_db
+      - DB_USERNAME=user
+      - DB_PASSWORD=password
+      - QUEUE_CONNECTION=rabbitmq
+      - RABBITMQ_HOST=medtech-rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=guest
+      - RABBITMQ_PASSWORD=guest
+      - RABBITMQ_VHOST=/
+      - USER_SERVICE_URL=http://medtech-userservice:5000
+      - PRODUCT_SERVICE_URL=http://medtech-productservice:80/api
+    volumes:
+      - .:/var/www
+    depends_on:
+      orderservice-db:
+        condition: service_healthy
+    networks:
+      - medtech-network
+    restart: unless-stopped
+
+  orderservice-db:
+    image: mysql:8.0
+    container_name: medtech-orderservice-db
+    ports:
+      - "3308:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_DATABASE=orders_db
+      - MYSQL_USER=user
+      - MYSQL_PASSWORD=password
+    volumes:
+      - orderservice_db_data:/var/lib/mysql
+    networks:
+      - medtech-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+networks:
+  medtech-network:
+    external: true
+    name: medtech-network
+
+volumes:
+  orderservice_db_data:
