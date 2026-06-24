@@ -1,75 +1,54 @@
-<?php
+<?php declare(strict_types=1);
 
 namespace App\GraphQL\Mutations;
 
 use App\Models\Order;
-use App\Jobs\UpdateProductStock;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
-class OrderMutations
+final readonly class OrderMutations
 {
-    private string $userServiceUrl;
-    private string $productServiceUrl;
-
-    public function __construct()
+    /** @param  array{}  $args */
+    public function __invoke(null $_, array $args)
     {
-        $this->userServiceUrl = config('services.user_service.url');
-        $this->productServiceUrl = env('PRODUCT_SERVICE_URL'); // Langsung menunjuk Hasura
+        // TODO implement the resolver
     }
 
     /**
      * Create a new order.
+     * Logic sama persis dengan OrderController::store()
      */
-    public function create($rootValue, array $args)
+    public function create($root, array $args, \Nuwave\Lighthouse\Support\Contracts\GraphQLContext $context)
     {
         $input = $args['input'];
-        $token = request()->bearerToken();
+        $request = $context->request();
+        $token = $request->bearerToken();
 
-        // Fetch User Data
-        $userResponse = Http::get("{$this->userServiceUrl}/users/{$input['user_id']}");
-        $userData = $userResponse->json()['data'] ?? $userResponse->json();
+        // Ambil user_id dari auth_user (di-set oleh middleware VerifyUserLogin)
+        $userId = $request->auth_user['id'] ?? null;
+
+        // Fetch User Data dari User Service
+        $userData = $this->fetchUserData($userId);
 
         if (!$userData) {
-            throw new \Exception("User not found");
+            throw new \GraphQL\Error\Error('User not found');
         }
 
-        // Fetch Product Data dari Hasura
-        $queryObat = '
-            query GetObat($id: Int!) {
-                obat_by_pk(id: $id) {
-                    id
-                    nama_obat
-                    price
-                    stock
-                }
-            }
-        ';
-
-        $productResponse = Http::withHeaders([
-            'Authorization' => 'Bearer ' . $token,
-            'x-hasura-admin-secret' => env('HASURA_ADMIN_SECRET', 'admin123')
-        ])->post($this->productServiceUrl, [
-            'query' => $queryObat,
-            'variables' => [
-                'id' => (int) $input['product_id']
-            ]
-        ]);
-
-        $productData = $productResponse->json()['data']['obat_by_pk'] ?? null;
+        // Fetch Product Data dari Product Service via GraphQL
+        $productData = $this->fetchProductData($input['product_id']);
 
         if (!$productData) {
-            throw new \Exception("Product not found di Hasura");
+            throw new \GraphQL\Error\Error('Product not found');
         }
 
         // Check stock
         if (($productData['stock'] ?? 0) < $input['quantity']) {
-            throw new \Exception("Stok obat tidak mencukupi. Stok saat ini: " . ($productData['stock'] ?? 0));
+            throw new \GraphQL\Error\Error('Stok obat tidak mencukupi. Stok saat ini: ' . ($productData['stock'] ?? 0));
         }
 
         $order = Order::create([
             'order_code' => $this->generateOrderCode($userData, $productData),
-            'user_id' => $input['user_id'],
+            'user_id' => $userId,
             'customer_name' => $userData['name'] ?? ($userData['username'] ?? 'Unknown'),
             'customer_email' => $userData['email'] ?? '-',
             'product_id' => $input['product_id'],
@@ -78,8 +57,8 @@ class OrderMutations
             'status' => 'pending',
         ]);
 
-        // Trigger RabbitMQ Job
-        UpdateProductStock::dispatch($input['product_id'], $input['quantity'], 'subtract')
+        // Kirim ke RabbitMQ untuk mengurangi stok produk
+        \App\Jobs\UpdateProductStock::dispatch($input['product_id'], $input['quantity'], 'subtract')
             ->onQueue('product_stock_queue');
 
         return $order;
@@ -87,104 +66,139 @@ class OrderMutations
 
     /**
      * Update an existing order.
+     * Logic sama persis dengan OrderController::update()
      */
-    public function update($rootValue, array $args)
+    public function update($root, array $args, \Nuwave\Lighthouse\Support\Contracts\GraphQLContext $context)
     {
         $input = $args['input'];
-        $order = Order::findOrFail($input['id']);
-        $token = request()->bearerToken();
+        $request = $context->request();
+        $token = $request->bearerToken();
 
-        $productId = $input['product_id'] ?? $order->product_id;
-        $quantity = $input['quantity'] ?? $order->quantity;
-
-        // Fetch Product Info dari Hasura
-        $queryObat = '
-            query GetObat($id: Int!) {
-                obat_by_pk(id: $id) {
-                    id
-                    nama_obat
-                    price
-                    stock
-                }
-            }
-        ';
-
-        $productResponse = Http::withHeaders([
-            'Authorization' => 'Bearer ' . $token,
-            'x-hasura-admin-secret' => env('HASURA_ADMIN_SECRET', 'admin123')
-        ])->post($this->productServiceUrl, [
-            'query' => $queryObat,
-            'variables' => [
-                'id' => (int) $productId
-            ]
-        ]);
-
-        $productData = $productResponse->json()['data']['obat_by_pk'] ?? null;
-
-        if (!$productData) {
-            throw new \Exception("Product not found di Hasura");
+        $order = Order::find($input['id']);
+        if (!$order) {
+            throw new \GraphQL\Error\Error('Order not found');
         }
 
-        // Stock Adjustment Logic
-        if ($order->quantity != $quantity) {
-            if ($order->quantity > $quantity) {
-                $diff = $order->quantity - $quantity;
-                UpdateProductStock::dispatch($productId, $diff, 'add')->onQueue('product_stock_queue');
-            } else {
-                $diff = $quantity - $order->quantity;
-                if (($productData['stock'] ?? 0) < $diff) {
-                    throw new \Exception("Stok obat tidak mencukupi untuk penambahan.");
-                }
-                UpdateProductStock::dispatch($productId, $diff, 'subtract')->onQueue('product_stock_queue');
+        // Get Product Info for price
+        $productData = $this->fetchProductData($input['product_id']);
+
+        if (!$productData) {
+            throw new \GraphQL\Error\Error('Product not found');
+        }
+
+        // Hitung perbedaan quantity dan update stok via RabbitMQ
+        if ($order->quantity > $input['quantity']) {
+            $qtt = $order->quantity - $input['quantity'];
+            // Kirim ke RabbitMQ untuk menambah kembali stok
+            \App\Jobs\UpdateProductStock::dispatch($input['product_id'], $qtt, 'add')
+                ->onQueue('product_stock_queue');
+        } else {
+            $qtt = $input['quantity'] - $order->quantity;
+
+            if (($productData['stock'] ?? 0) < $qtt) {
+                throw new \GraphQL\Error\Error('Stok obat tidak mencukupi untuk penambahan jumlah. Stok saat ini: ' . ($productData['stock'] ?? 0));
             }
+
+            // Kirim ke RabbitMQ untuk mengurangi stok
+            \App\Jobs\UpdateProductStock::dispatch($input['product_id'], $qtt, 'subtract')
+                ->onQueue('product_stock_queue');
         }
 
         $order->update([
-            'product_id' => $productId,
-            'quantity' => $quantity,
-            'total_price' => ($productData['price'] ?? 0) * $quantity,
-            'status' => $input['status'] ?? $order->status,
+            'product_id' => $input['product_id'],
+            'quantity' => $input['quantity'],
+            'total_price' => ($productData['price'] ?? 0) * $input['quantity'],
+            'status' => $input['status'],
         ]);
 
         return $order;
     }
 
     /**
-     * Update only the status of an order.
+     * Update order status.
+     * Logic sama persis dengan OrderController::updateStatus()
      */
-    public function updateStatus($rootValue, array $args)
+    public function updateStatus($root, array $args)
     {
-        $input = $args['input'];
-        $order = Order::findOrFail($input['id']);
-        
-        $order->update(['status' => $input['status']]);
-        
+        $order = Order::find($args['id']);
+        if (!$order) {
+            throw new \GraphQL\Error\Error('Order not found');
+        }
+
+        $order->update(['status' => $args['status']]);
         return $order;
     }
 
     /**
      * Delete an order.
+     * Logic sama persis dengan OrderController::destroy()
      */
-    public function delete($rootValue, array $args)
+    public function delete($root, array $args)
     {
-        $order = Order::findOrFail($args['id']);
+        $order = Order::find($args['id']);
+        if (!$order) {
+            throw new \GraphQL\Error\Error('Order not found');
+        }
 
-        // Return stock to product service
-        UpdateProductStock::dispatch($order->product_id, $order->quantity, 'add')
+        // Kirim ke RabbitMQ untuk mengembalikan stok
+        \App\Jobs\UpdateProductStock::dispatch($order->product_id, $order->quantity, 'add')
             ->onQueue('product_stock_queue');
 
         $order->delete();
-
         return $order;
     }
 
     /**
-     * Helper to generate order code.
+     * Fetch user data dari User Service.
+     * Sama dengan OrderController::fetchUserData()
+     */
+    private function fetchUserData($id)
+    {
+        if (!$id) return null;
+
+        $userServiceUrl = config('services.user_service.url');
+        $response = Http::timeout(5)->get("{$userServiceUrl}/users/{$id}");
+        return $response->successful() ? ($response->json()['data'] ?? $response->json()) : null;
+    }
+
+    /**
+     * Fetch product data dari Product Service via GraphQL.
+     * Sama dengan OrderController::fetchProductData()
+     */
+    private function fetchProductData($id)
+    {
+        $query = <<<'GRAPHQL'
+        query GetObat($id: bigint!) {
+            obats_by_pk(id: $id) {
+                id
+                name
+                category
+                price
+                stock
+                description
+            }
+        }
+        GRAPHQL;
+
+        $response = Http::withHeaders([
+            'x-hasura-admin-secret' => env('HASURA_ADMIN_SECRET'),
+            'Content-Type' => 'application/json',
+        ])->post(env('HASURA_URL'), [
+            'query' => $query,
+            'variables' => ['id' => (int) $id]
+        ]);
+
+        return $response->json()['data']['obats_by_pk'] ?? null;
+    }
+
+    /**
+     * Generate order code.
+     * Sama dengan OrderController::generateOrderCode()
      */
     private function generateOrderCode($user, $product)
     {
         $name = Str::slug($user['name'] ?? ($user['username'] ?? 'user'));
-        $item = Str::slug($product['nama_obat'] ?? ($product['name'] ?? 'item'));
+        $item = Str::slug($product['name'] ?? ($product['nama_obat'] ?? 'item'));
         return strtoupper("ORD-{$name}-{$item}-" . rand(1000, 9999));
     }
 }

@@ -22,7 +22,6 @@ class OrderController extends Controller
         $this->productServiceUrl = config('services.product_service.url');
     }
 
-    
     protected function fetchUserData($id)
     {
         if (!$id)
@@ -32,6 +31,32 @@ class OrderController extends Controller
 
         $response = Http::timeout(5)->get("{$this->userServiceUrl}/users/{$id}");
         return $this->usersCache[$id] = $response->successful() ? ($response->json()['data'] ?? $response->json()) : null;
+    }
+
+    protected function fetchProductData($id)
+    {
+        $query = <<<'GRAPHQL'
+        query GetObat($id: bigint!) {
+            obats_by_pk(id: $id) {
+                id
+                name
+                category
+                price
+                stock
+                description
+            }
+        }
+        GRAPHQL;
+
+        $response = Http::withHeaders([
+            'x-hasura-admin-secret' => env('HASURA_ADMIN_SECRET'),
+            'Content-Type' => 'application/json',
+        ])->post(env('HASURA_URL'), [
+            'query' => $query,
+            'variables' => ['id' => (int) $id]
+        ]);
+
+        return $response->json()['data']['obats_by_pk'] ?? null;
     }
 
     public function index()
@@ -60,10 +85,7 @@ class OrderController extends Controller
             return new OrderResource(null, 'gagal', 'User not found');
         }
 
-        $productResponse = Http::withHeaders([
-            'Authorization' => 'Bearer ' . $token
-        ])->get("{$this->productServiceUrl}/obat/{$request->product_id}");
-        $productData = $productResponse->json()['data'] ?? null;
+        $productData = $this->fetchProductData($request->product_id);
 
         if (!$productData) {
             return new OrderResource(null, 'gagal', 'Product not found');
@@ -100,10 +122,7 @@ class OrderController extends Controller
             $data = $order->toArray();
 
             // Get the product details (consume)
-            $productResponse = Http::withHeaders([
-                'Authorization' => 'Bearer ' . $token
-            ])->get("{$this->productServiceUrl}/obat/{$order->product_id}");
-            $data['product'] = $productResponse->json()['data'] ?? null;
+            $data['product'] = $this->fetchProductData($order->product_id);
 
             // Get the user details (consume)
             $userResponse = Http::get("{$this->userServiceUrl}/users/{$order->user_id}");
@@ -134,10 +153,7 @@ class OrderController extends Controller
         }
 
         // Get Product Info for price
-        $productResponse = Http::withHeaders([
-            'Authorization' => 'Bearer ' . $token
-        ])->get("{$this->productServiceUrl}/obat/{$request->product_id}");
-        $productData = $productResponse->json()['data'] ?? null;
+        $productData = $this->fetchProductData($request->product_id);
 
         if (!$productData) {
             return new OrderResource(null, 'gagal', 'Product not found');

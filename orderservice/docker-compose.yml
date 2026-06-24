@@ -1,19 +1,20 @@
 ##############################################
 # Order Service (Laravel)
 # Command: docker compose up -d --build
-# Pastikan docker-compose.infra.yml sudah berjalan
+# Pastikan rabbitmq/docker-compose.yml sudah berjalan
 ##############################################
 
 services:
   orderservice-app:
-    build:
-      context: .
+    build: .
     container_name: medtech-orderservice
-    ports:
-      - "8001:80"
+    volumes:
+      - .:/var/www
     environment:
       - APP_ENV=local
-      - APP_KEY=${APP_KEY}
+      - APP_DEBUG=true
+      - APP_URL=http://localhost:8001
+      - TRUSTED_PROXIES=*
       - DB_CONNECTION=mysql
       - DB_HOST=orderservice-db
       - DB_PORT=3306
@@ -27,14 +28,36 @@ services:
       - RABBITMQ_PASSWORD=guest
       - RABBITMQ_VHOST=/
       - USER_SERVICE_URL=http://medtech-userservice:5000
-      - PRODUCT_SERVICE_URL=http://medtech-productservice:80/api
-    volumes:
-      - .:/var/www
+      - PRODUCT_SERVICE_URL=http://medtech-productservice-nginx:80
+      - HASURA_URL=http://medtech-hasura:8080/v1/graphql
+      - HASURA_ADMIN_SECRET=admin123
+    command: >
+      sh -c "
+        mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache &&
+        chown -R www-data:www-data storage bootstrap/cache &&
+        chmod -R 775 storage bootstrap/cache &&
+        touch storage/logs/laravel.log && chmod 664 storage/logs/laravel.log && chown www-data:www-data storage/logs/laravel.log &&
+        php-fpm
+      "
     depends_on:
       orderservice-db:
         condition: service_healthy
     networks:
       - medtech-network
+    restart: unless-stopped
+
+  orderservice-nginx:
+    image: nginx:stable-alpine
+    container_name: medtech-orderservice-nginx
+    ports:
+      - "8001:80"
+    volumes:
+      - .:/var/www
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - medtech-network
+    depends_on:
+      - orderservice-app
     restart: unless-stopped
 
   orderservice-db:
@@ -53,8 +76,8 @@ services:
       - medtech-network
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
+      interval: 30s
+      timeout: 10s
       retries: 5
     restart: unless-stopped
 

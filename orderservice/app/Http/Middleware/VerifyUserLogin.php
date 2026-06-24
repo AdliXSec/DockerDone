@@ -30,6 +30,7 @@ class VerifyUserLogin
             $userServiceUrl = config('services.user_service.url');
             // Forward token ke User Service endpoint /is_login
             $response = Http::timeout(5)
+                ->withOptions(['force_ip_resolve' => 'v4'])
                 ->withHeaders([
                     'Authorization' => 'Bearer ' . $token,
                 ])

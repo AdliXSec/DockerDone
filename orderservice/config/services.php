@@ -40,7 +40,7 @@ return [
     ],
 
     'product_service' => [
-        'url' => env('PRODUCT_SERVICE_URL', 'http://medtech-hasura:8080/v1/graphql'),
+        'url' => env('PRODUCT_SERVICE_URL', 'http://medtech-productservice-nginx:80'),
     ],
 
 ];
