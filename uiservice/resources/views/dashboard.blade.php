@@ -122,7 +122,7 @@
                                 Pusat Bantuan Cepat
                             </h3>
                             <p class="text-slate-400 text-sm mb-6 leading-relaxed">Mengalami kendala teknis pada aplikasi?
-                                Segera hubungi tim pengembang kami.</p>
+                                Segera hubungi tim pengembang kami</p>
 
                             <div class="space-y-3">
 
