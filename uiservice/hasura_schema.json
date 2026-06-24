@@ -1,0 +1,14 @@
+{
+    "data": {
+        "__schema": {
+            "queryType": {
+                "fields": [
+                    {
+                        "name": "no_queries_available"
+                    }
+                ]
+            },
+            "mutationType": null
+        }
+    }
+}

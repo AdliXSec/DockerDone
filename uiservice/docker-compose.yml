@@ -1,0 +1,88 @@
+##############################################
+# UI Service (Laravel)
+# Command: docker compose up -d --build
+# Pastikan rabbitmq/docker-compose.yml sudah berjalan
+##############################################
+
+services:
+  uiservice-app:
+    build: .
+    container_name: medtech-uiservice
+    volumes:
+      - .:/var/www
+    environment:
+      - APP_ENV=local
+      - APP_DEBUG=true
+      - APP_URL=http://localhost:8000
+      - TRUSTED_PROXIES=*
+      - DB_CONNECTION=mysql
+      - DB_HOST=uiservice-db
+      - DB_PORT=3306
+      - DB_DATABASE=ui_db
+      - DB_USERNAME=user
+      - DB_PASSWORD=password
+      - USER_SERVICE_URL=http://medtech-userservice:5000
+      - ORDER_SERVICE_URL=http://medtech-orderservice-nginx:80
+      - PRODUCT_SERVICE_URL=http://medtech-productservice-nginx:80
+      - APP_KEY=base64:Z1JvBM6XhJHZ3J8/One6ZWhaoYM3uVJhgMgvCM92NN0=
+      - SESSION_DRIVER=file
+      - HASURA_URL=http://medtech-hasura:8080/v1/graphql
+      - HASURA_ADMIN_SECRET=admin123
+    command: >
+      sh -c "
+        mkdir -p storage/logs storage/framework/cache storage/framework/sessions storage/framework/views bootstrap/cache &&
+        chown -R www-data:www-data storage bootstrap/cache &&
+        chmod -R 775 storage bootstrap/cache &&
+        touch storage/logs/laravel.log && chmod 664 storage/logs/laravel.log && chown www-data:www-data storage/logs/laravel.log &&
+        php artisan migrate --force 2>/dev/null || true &&
+        php-fpm
+      "
+    depends_on:
+      uiservice-db:
+        condition: service_healthy
+    networks:
+      - medtech-network
+    restart: unless-stopped
+
+  uiservice-nginx:
+    image: nginx:stable-alpine
+    container_name: medtech-uiservice-nginx
+    ports:
+      - "8000:80"
+    volumes:
+      - .:/var/www
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - medtech-network
+    depends_on:
+      - uiservice-app
+    restart: unless-stopped
+
+  uiservice-db:
+    image: mysql:8.0
+    container_name: medtech-uiservice-db
+    ports:
+      - "3310:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_DATABASE=ui_db
+      - MYSQL_USER=user
+      - MYSQL_PASSWORD=password
+    volumes:
+      - uiservice_db_data:/var/lib/mysql
+    networks:
+      - medtech-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+networks:
+  medtech-network:
+    external: true
+    name: medtech-network
+
+volumes:
+  uiservice_db_data:
